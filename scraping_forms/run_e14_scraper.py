@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append(".")
 
 from scraping_forms.scrape_election_forms import DropDownSelection, E14Cong2018
 
@@ -16,5 +18,6 @@ if __name__ == "__main__":
             DropDownSelection("puesto", '//*[@id="pto"]'),
         ],
         between_two_pdfs_wait_time=0.1,
+        headless=False # just for fun, to see how it is working
     )
     scraper.init().run()

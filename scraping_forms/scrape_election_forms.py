@@ -1,7 +1,4 @@
 import os
-import sys
-
-sys.path.append(".")
 
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -38,11 +35,11 @@ class NestedDropDowns:
     download_path: str
     selections: List[DropDownSelection]
     between_two_pdfs_wait_time: float = 1.0  # seconds
-    headless:bool=True
+    headless: bool = True
 
     def init(self):
         os.makedirs(self.download_path, exist_ok=True)
-        self.wd = build_chrome_driver(self.download_path, headless=headless)
+        self.wd = build_chrome_driver(self.download_path, headless=self.headless)
         self.wd.get(self.url)
         return self
 
@@ -114,6 +111,3 @@ class E14Cong2018(NestedDropDowns):
             if "javascript" not in e.attrs["href"]
         ]
         return pdfs
-
-
-
