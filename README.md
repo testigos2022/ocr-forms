@@ -11,7 +11,7 @@ sudo chmod +x /usr/bin/chromedriver
 # python venv
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r scraping_forms/requirements.txt
 ```
 * scrape E14
 ```shell
