@@ -52,7 +52,12 @@ class NestedDropDowns:
 
     def _recurse_through_dropdown_tree(self, selections: List[DropDownSelection]):
         sel = selections[0]
-        num_options = get_num_options(self.wd, sel.name, sel.xpath)
+        sleep(1)
+        try:
+            num_options = get_num_options(self.wd, sel.name, sel.xpath)
+        except BaseException as e:
+            self.wd.save_screenshot(f"screenshot.png")
+            raise e
         stop = num_options if sel.stop is None else sel.stop
         for k in range(sel.start, stop):
             option_xpath = f"{sel.xpath}/option[{k}]"
