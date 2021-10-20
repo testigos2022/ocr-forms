@@ -44,6 +44,7 @@ class NestedDropDowns:
 
     def init(self):
         os.makedirs(self.download_path, exist_ok=True)
+        os.makedirs(self.data_dir, exist_ok=True)
         self.wd = build_chrome_driver(self.download_path, headless=self.headless)
         self.wd.get(self.url)
         return self
@@ -87,29 +88,31 @@ class NestedDropDowns:
             except BaseException as e:
                 print(e)
             finally:
-
-                for f in tqdm(
-                    Path(self.download_path).glob(".pdf"), desc="moving files"
-                ):
-                    dest = self.to_be_moved.pop(str(f))
-                    shutil.move(
-                        f"{self.download_path}/{str(f)}",
-                        f"{self.data_dir}/{dest}",
-                    )
-
-                def already_moved(file):
-                    return os.path.isfile(f"{self.data_dir}/{file}")
-
-                print(f"{len(self.to_be_moved)=}")
-                self.to_be_moved = {
-                    k: v for k, v in self.to_be_moved.items() if not already_moved(v)
-                }
-                print(f"{len(self.to_be_moved)=} cleaned by already moved ones")
-
+                self._move_files()
                 if selected_option is not None:
-                    print(f"{self.selection_path=}")
+                    print(f"{self.selection_path=},{selected_option=}")
                     pop_index = self.selection_path.index(selected_option)
                     self.selection_path.pop(pop_index)
+
+    def _move_files(self):
+        for f in tqdm(Path(self.download_path).glob("*.pdf"), desc="moving files"):
+            if f.name not in self.to_be_moved.keys():
+                print(f"{f.name} is not in {self.to_be_moved.keys()}")
+                continue
+            dest = self.to_be_moved.pop(f.name)
+            shutil.move(
+                f"{str(f)}",
+                f"{self.data_dir}/{dest}",
+            )
+
+        def already_moved(file):
+            return os.path.isfile(f"{self.data_dir}/{file}")
+
+        print(f"{len(self.to_be_moved)=}")
+        self.to_be_moved = {
+            k: v for k, v in self.to_be_moved.items() if not already_moved(v)
+        }
+        print(f"{len(self.to_be_moved)=} cleaned by already moved ones")
 
     def _process_selection_leaf(self):
         sleep(1)
