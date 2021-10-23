@@ -15,21 +15,21 @@ from util import data_io
 from selenium_util import click_it, build_chrome_driver
 
 
-def get_num_options(wd, name, xpath):
+def get_options(wd, xpath):
     element: WebElement = wd.find_element_by_xpath(xpath)
     element.click()
     options = [e.text for e in element.find_elements_by_tag_name("option")]
-    num_options = len(options)
-    print(f"{name}: {num_options=}, {options=}")
-    return num_options
+
+    return options
 
 
 @dataclass
 class DropDownSelection:
     name: str
     xpath: str
-    start: int = 1
+    start: Optional[int] = None
     stop: Optional[int] = None
+    start_option: Optional[str] = str
 
 
 @dataclass
@@ -45,6 +45,16 @@ class NestedDropDowns:
     def init(self):
         os.makedirs(self.download_path, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
+
+        last_states = [
+            d["selection_path"]
+            for d in data_io.read_jsonl(f"{self.download_path}/selection_states.jsonl")
+        ][-1]
+        print(f"{last_states=}")
+        for option, selection in zip(last_states, self.selections):
+            if selection.start is None:
+                selection.start_option = option
+
         self.wd = build_chrome_driver(self.download_path, headless=self.headless)
         self.wd.get(self.url)
         return self
@@ -52,6 +62,7 @@ class NestedDropDowns:
     def run(self):
         self.selection_path = []
         self.to_be_moved = {}
+
         self._recurse_through_dropdown_tree(self.selections)
 
     @abstractmethod
@@ -64,13 +75,32 @@ class NestedDropDowns:
     ):
         sel = selections[0]
         sleep(1)
-        try:
-            num_options = get_num_options(self.wd, sel.name, sel.xpath)
-        except BaseException as e:
-            self.wd.save_screenshot(f"screenshot.png")
-            raise e
+        options = get_options(self.wd, sel.xpath)
+
+        if sel.start is None and sel.start_option is not None:
+            start = None
+            for k in range(3):
+                try:
+                    assert (
+                        sel.start_option in options
+                    ), f"{sel.start_option=} not in {options=}"
+                    start = options.index(sel.start_option) + 1
+                    sel.start_option = None
+                    break
+                except BaseException as e:
+                    sleep(1.0)
+                    options = get_options(self.wd, sel.xpath)
+            if start is None:
+                raise AssertionError
+
+        elif sel.start is not None:
+            start = sel.start
+        else:
+            start = 1
+
+        num_options = len(options)
         stop = num_options if sel.stop is None else sel.stop
-        for k in range(sel.start, stop):
+        for k in range(start, stop):
             option_xpath = f"{sel.xpath}/option[{k}]"
             selected_option = None
             try:
@@ -85,8 +115,6 @@ class NestedDropDowns:
                     self._recurse_through_dropdown_tree(selections[1:])
                 else:
                     self._process_selection_leaf()
-            except BaseException as e:
-                print(e)
             finally:
                 self._move_files()
                 if selected_option is not None:
@@ -150,8 +178,6 @@ class NestedDropDowns:
                 else:
                     print(f"already got {pdf_file}")
 
-        except BaseException as e:
-            print(e)
         finally:
             data_io.write_jsonl(
                 f"{self.download_path}/selection_states.jsonl",
