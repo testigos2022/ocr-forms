@@ -1,5 +1,6 @@
 import os
 import shutil
+import traceback
 
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from selenium.webdriver.remote.webelement import WebElement
 from tqdm import tqdm
 from util import data_io
 
-from selenium_util import click_it, build_chrome_driver
+from selenium_util import click_it, ChromeDriver, retry
 
 
 def get_options(wd, xpath):
@@ -42,7 +43,7 @@ class NestedDropDowns:
     between_two_pdfs_wait_time: float = 1.0  # seconds
     headless: bool = True
 
-    def init(self):
+    def _setup(self):
         os.makedirs(self.download_path, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
 
@@ -55,14 +56,24 @@ class NestedDropDowns:
             if selection.start is None:
                 selection.start_option = option
 
-        self.wd = build_chrome_driver(self.download_path, headless=self.headless)
-        self.wd.get(self.url)
         return self
 
     def run(self):
+        while True:
+            try:
+                with ChromeDriver(self.download_path, headless=self.headless) as wd:
+                    self._run(wd)
+            except BaseException as e:
+                print(f"run failed with: {e}")
+                traceback.print_exc()
+                sleep(3.0)
+
+    def _run(self, wd):
+        self._setup()
         self.selection_path = []
         self.to_be_moved = {}
-
+        self.wd = wd
+        self.wd.get(self.url)
         self._recurse_through_dropdown_tree(self.selections)
 
     @abstractmethod
@@ -78,33 +89,31 @@ class NestedDropDowns:
         options = get_options(self.wd, sel.xpath)
 
         if sel.start is None and sel.start_option is not None:
-            start = None
-            for k in range(3):
-                try:
-                    assert (
-                        sel.start_option in options
-                    ), f"{sel.start_option=} not in {options=}"
-                    start = options.index(sel.start_option) + 1
-                    sel.start_option = None
-                    break
-                except BaseException as e:
-                    sleep(1.0)
-                    options = get_options(self.wd, sel.xpath)
-            if start is None:
-                raise AssertionError
+
+            def find_resume_start():
+                options = get_options(self.wd, sel.xpath)
+                assert (
+                    sel.start_option in options
+                ), f"{sel.start_option=} not in {options=}"
+                start = options.index(sel.start_option) + 1
+                return start
+
+            start = retry(find_resume_start)
+            sel.start_option = None  # so that next time it starts at 1
+            sel.start = 1
 
         elif sel.start is not None:
             start = sel.start
         else:
             start = 1
 
-        num_options = len(options)
+        num_options = len(options)+1
         stop = num_options if sel.stop is None else sel.stop
         for k in range(start, stop):
             option_xpath = f"{sel.xpath}/option[{k}]"
             selected_option = None
             try:
-                element = self.wd.find_element_by_xpath(option_xpath)
+                element = retry(lambda: self.wd.find_element_by_xpath(option_xpath))
                 element.click()
                 selected_option = element.text
                 self.selection_path.append(selected_option)

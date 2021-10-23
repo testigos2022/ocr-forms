@@ -1,10 +1,12 @@
 import os
+from contextlib import contextmanager
+from time import sleep
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 
-
-def build_chrome_driver(download_dir: str, headless=True,window_size=(1920,1080)):
+@contextmanager
+def ChromeDriver(download_dir: str, headless=True, window_size=(1920, 1080)):
     os.makedirs(download_dir, exist_ok=True)
     options = webdriver.ChromeOptions()
     if headless:
@@ -18,12 +20,14 @@ def build_chrome_driver(download_dir: str, headless=True,window_size=(1920,1080)
         "plugins.always_open_pdf_externally": True, # don't open pdfs in browser but instead download them
     }
     options.add_experimental_option("prefs", prefs)
-
     driver = webdriver.Chrome(
         r"/usr/bin/chromedriver", chrome_options=options,
     )  # provide the chromedriver execution path in case of error
     driver.implicitly_wait(10)  # seconds
-    return driver
+    try:
+        yield driver
+    finally:
+        driver.close()
 
 
 def enter_keyboard_input(wd, xpath: str, value: str, clear_it=False,press_enter=False):
@@ -35,6 +39,17 @@ def enter_keyboard_input(wd, xpath: str, value: str, clear_it=False,press_enter=
     e.send_keys(value)
     if press_enter:
         e.send_keys(Keys.ENTER)
+
+def retry(fun,num_retries=3,wait_time=1.0):
+    exception=None
+    for k in range(num_retries):
+        try:
+            return fun()
+        except Exception as e:
+            exception=e
+            sleep(wait_time)
+    print(f"retry failed {num_retries} times!")
+    raise exception
 
 
 def click_it(wd, xpath):
