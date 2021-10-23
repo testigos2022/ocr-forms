@@ -50,12 +50,13 @@ class NestedDropDowns:
     selections: List[DropDownSelection]
     between_two_pdfs_wait_time: float = 1.0  # seconds
     headless: bool = True
+    state: Optional = None
 
     @property
     def state_json(self):
         return f"{self.download_path}/state.json"
 
-    def _set_start_state(self, last_states=None):
+    def _set_start_state(self):
         os.makedirs(self.download_path, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
         # if last_states is None or len(last_states)==0:
@@ -63,33 +64,31 @@ class NestedDropDowns:
         #         d["selection_path"]
         #         for d in data_io.read_jsonl(f"{self.download_path}/selection_states.jsonl")
         #     ][-1]
-
-        print(f"{last_states=}")
-        for option, selection in zip(last_states, self.selections):
-            if selection.start is None:
-                selection.start_option = option
+        if self.state is not None:
+            print(f"start-state:{self.state}")
+            for option, selection in zip(self.state["selection_path"], self.selections):
+                if selection.start is None:
+                    selection.start_option = option
 
         return self
 
     def run(self):
         if os.path.isfile(self.state_json):
-            self.selection_path = read_json(self.state_json)["selection_path"]
-        else:
-            self.selection_path = []
+            self.state = read_json(self.state_json)
 
         while True:
             try:
                 with ChromeDriver(self.download_path, headless=self.headless) as wd:
                     self._run(wd)
             except BaseException as e:
-                write_json(self.state_json, {"selection_path": self.selection_path})
+                write_json(self.state_json, self.state)
                 print(f"run failed with: {e}")
                 traceback.print_exc()
                 sleep(3.0)
 
     def _run(self, wd):
-        if len(self.selection_path) > 0:
-            self._set_start_state(self.selection_path)
+        self.selection_path = []
+        self._set_start_state()
         self.to_be_moved = {}
         self.wd = wd
         self.wd.get(self.url)
@@ -166,17 +165,20 @@ class NestedDropDowns:
         def already_moved(file):
             return os.path.isfile(f"{self.data_dir}/{file}")
 
-        print(f"{len(self.to_be_moved)=}")
+        # print(f"{len(self.to_be_moved)=}")
         self.to_be_moved = {
             k: v for k, v in self.to_be_moved.items() if not already_moved(v)
         }
-        print(f"{len(self.to_be_moved)=} cleaned by already moved ones")
+        # print(f"{len(self.to_be_moved)=} cleaned by already moved ones")
 
     def _process_selection_leaf(self):
         get_pdfs_wait = 0.1
         sleep(get_pdfs_wait)
         num_pdfs = 0
         num_pdfs_downloaded = 0
+        assert len(self.selection_path) > 0
+        selection_path_copy = [p for p in self.selection_path]
+        self.state = {"selection_path": selection_path_copy}
         try:
             pdfs = self.get_pdf_urls()
             for pdf_url in pdfs:
