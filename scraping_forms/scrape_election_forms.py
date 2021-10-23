@@ -1,5 +1,8 @@
+import gzip
+import json
 import os
 import shutil
+import sys
 import traceback
 
 from abc import abstractmethod
@@ -29,7 +32,6 @@ def get_options(wd, xpath):
 class DropDownSelection:
     name: str
     xpath: str
-    start: Optional[int] = None
     stop: Optional[int] = None
     start_option: Optional[str] = None
 
@@ -67,13 +69,21 @@ class NestedDropDowns:
         if self.state is not None:
             print(f"start-state:{self.state}")
             for option, selection in zip(self.state["selection_path"], self.selections):
-                if selection.start is None:
-                    selection.start_option = option
+                selection.start_option = option
 
         return self
 
     def run(self):
         if os.path.isfile(self.state_json):
+            def read_json(file: str, mode="b"):
+                with gzip.open(file, mode="r" + mode) if file.endswith("gz") else open(
+                        file, mode="r" + mode
+                ) as f:
+                    s = f.read()
+                    s = s.decode("utf-8") if mode == "b" else s
+                    s=s.replace("'","\"")
+                    return json.loads(s)
+
             self.state = read_json(self.state_json)
 
         while True:
@@ -83,7 +93,8 @@ class NestedDropDowns:
             except BaseException as e:
                 write_json(self.state_json, self.state)
                 print(f"run failed with: {e}")
-                traceback.print_exc()
+                print(f"wrote state: {self.state}")
+                # traceback.print_exc()
                 sleep(3.0)
 
     def _run(self, wd):
@@ -111,7 +122,7 @@ class NestedDropDowns:
             increase_wait_time=True,
         )
 
-        if sel.start is None and sel.start_option is not None:
+        if sel.start_option is not None:
 
             def find_resume_start():
                 options = get_options(self.wd, sel.xpath)
@@ -121,12 +132,8 @@ class NestedDropDowns:
                 start = options.index(sel.start_option) + 1
                 return start
 
-            start = retry(find_resume_start)
+            start = retry(find_resume_start,do_raise=False,default=1)
             sel.start_option = None  # so that next time it starts at 1
-            sel.start = 1
-
-        elif sel.start is not None:
-            start = sel.start
         else:
             start = 1
 
@@ -138,7 +145,6 @@ class NestedDropDowns:
             try:
                 selected_option = retry(lambda: click_option(self.wd, option_xpath))
                 self.selection_path.append(selected_option)
-                # print(f"{name=}, option: {self.wd.find_element_by_xpath(option_xpath).text}")
                 is_last = len(selections) == 1
                 if not is_last:
                     self._recurse_through_dropdown_tree(selections[1:])
@@ -147,14 +153,14 @@ class NestedDropDowns:
             finally:
                 self._move_files()
                 if selected_option is not None:
-                    print(f"{self.selection_path=},{selected_option=}")
+                    sys.stdout.write(f"\r{self.selection_path=},{selected_option=}")
                     pop_index = self.selection_path.index(selected_option)
                     self.selection_path.pop(pop_index)
 
     def _move_files(self):
-        for f in tqdm(Path(self.download_path).glob("*.pdf"), desc="moving files"):
+        for f in Path(self.download_path).glob("*.pdf"):
             if f.name not in self.to_be_moved.keys():
-                print(f"{f.name} is not in {self.to_be_moved.keys()}")
+                # print(f"{f.name} is not in {self.to_be_moved.keys()}")
                 continue
             dest = self.to_be_moved.pop(f.name)
             shutil.move(
@@ -209,7 +215,7 @@ class NestedDropDowns:
                     )
                     sleep(self.between_two_pdfs_wait_time)
                 else:
-                    print(f"already got {pdf_file}")
+                    sys.stdout.write(f"\ralready got {pdf_file}")
 
         finally:
             data_io.write_jsonl(
