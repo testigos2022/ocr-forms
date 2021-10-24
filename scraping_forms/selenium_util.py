@@ -40,7 +40,7 @@ def enter_keyboard_input(wd, xpath: str, value: str, clear_it=False,press_enter=
     if press_enter:
         e.send_keys(Keys.ENTER)
 
-def retry(fun,num_retries=3,wait_time=1.0,increase_wait_time=False,do_raise=True,default=None):
+def retry(fun,num_retries=3,wait_time=1.0,increase_wait_time=False,do_raise=True,default=None,fail_message=None):
     exception=None
     for k in range(num_retries):
         try:
@@ -54,6 +54,8 @@ def retry(fun,num_retries=3,wait_time=1.0,increase_wait_time=False,do_raise=True
             sleep(waiting_time)
     print(f"retry failed {num_retries} times!")
     if do_raise:
+        if fail_message:
+            print(fail_message)
         raise exception
     else:
         return default

@@ -104,6 +104,20 @@ class NestedDropDowns:
     def get_pdf_urls(self) -> List[str]:
         raise NotImplemented
 
+    def _click_option(self, xpath: str, option: str):
+        option_elements = retry(
+            lambda: get_options(self.wd, xpath),
+            wait_time=0.1,
+            increase_wait_time=True,
+            fail_message="failed to get options",
+        )
+        for e in option_elements:
+            if e.text == option:
+                e.click()
+                break
+        else:
+            raise Exception(f"could not click {option=}")
+
     def _recurse_through_dropdown_tree(
         self,
         selections: List[DropDownSelection],
@@ -111,25 +125,23 @@ class NestedDropDowns:
         sel = selections[0]
         step_in_selection_wait = 0.1
         sleep(step_in_selection_wait)
-        options = retry(
+
+        option_elements = retry(
             lambda: get_options(self.wd, sel.xpath),
             wait_time=0.1,
             increase_wait_time=True,
+            fail_message="failed to get options",
         )
-
-        start = self._calc_start(sel)
-
-        num_options = len(options)
-        stop = num_options if sel.stop is None else sel.stop
+        options = [o.text for o in option_elements]
+        start = self._calc_start(options, sel)
+        stop = len(options) if sel.stop is None else sel.stop
         for k in range(start, stop):
             option = options[k]
-            selected_option = None
             try:
-                selected_option = option.text
-                if selected_option in self.option_blacklist:
+                self._click_option(sel.xpath, option)
+                if option in self.option_blacklist:
                     continue
-                retry(lambda: option.click())
-                self.selection_path.append(selected_option)
+                self.selection_path.append(option)
                 is_last = len(selections) == 1
                 if not is_last:
                     self._recurse_through_dropdown_tree(selections[1:])
@@ -137,26 +149,21 @@ class NestedDropDowns:
                     self._process_selection_leaf()
             finally:
                 self._move_files()
-                if (
-                    selected_option is not None
-                    and selected_option in self.selection_path
-                ):
-                    sys.stdout.write(f"\r{self.selection_path=},{selected_option=}")
-                    pop_index = self.selection_path.index(selected_option)
+                if option in self.selection_path:
+                    sys.stdout.write(f"\r{self.selection_path=},{option=}")
+                    pop_index = self.selection_path.index(option)
                     self.selection_path.pop(pop_index)
 
-    def _calc_start(self, sel):
+    def _calc_start(self, options: List[str], sel):
+
         if sel.start_option is not None:
-
-            def find_resume_start():
-                options = get_options(self.wd, sel.xpath)
-                assert (
-                    sel.start_option in options
-                ), f"{sel.start_option=} not in {options=}"
+            if sel.start_option in options:
                 start = options.index(sel.start_option)
-                return start
-
-            start = retry(find_resume_start, do_raise=False, default=1)
+            else:
+                print(
+                    f"could not find {sel.start_option=} in {options=} -> starting at 0!"
+                )
+                start = 0
             sel.start_option = None  # so that next time it starts at 1
         else:
             start = 0
