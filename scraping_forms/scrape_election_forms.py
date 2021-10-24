@@ -38,7 +38,7 @@ class DropDownSelection:
 def get_click_option(wd, sel: DropDownSelection, option: str):
     option_elements = get_options(wd, sel.xpath)
     options_texts = [e.text for e in option_elements]
-    print(f"{sel.name=} searching for {option} in {options_texts}")
+    # print(f"{sel.name=} searching for {option} in {options_texts}")
     for e, ot in zip(option_elements, options_texts):
         if ot == option:
             e.click()
@@ -149,7 +149,7 @@ class NestedDropDowns:
                 selection_path.append(option)
                 is_last = len(selections) == 1
                 if not is_last:
-                    self._recurse_through_dropdown_tree(selections[1:], selection_path)
+                    retry(lambda : self._recurse_through_dropdown_tree(selections[1:], selection_path),fail_message="recurse-retry failed!")
                 else:
                     self._process_selection_leaf(selection_path)
             except Exception as e:
@@ -197,6 +197,7 @@ class NestedDropDowns:
         # print(f"{len(self.to_be_moved)=} cleaned by already moved ones")
 
     def _process_selection_leaf(self, selection_path):
+        sys.stdout.write(f"\r{selection_path=}")
         get_pdfs_wait = 0.1
         sleep(get_pdfs_wait)
         num_pdfs = 0
