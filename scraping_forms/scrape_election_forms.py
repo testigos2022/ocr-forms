@@ -27,6 +27,16 @@ def get_options(wd, xpath):
     return options
 
 
+def get_click_option(wd, xpath: str, option: str):
+    option_elements = get_options(wd, xpath)
+    for e in option_elements:
+        if e.text == option:
+            e.click()
+            break
+    else:
+        raise Exception(f"could not click {option=}")
+
+
 @dataclass
 class DropDownSelection:
     name: str
@@ -104,20 +114,6 @@ class NestedDropDowns:
     def get_pdf_urls(self) -> List[str]:
         raise NotImplemented
 
-    def _click_option(self, xpath: str, option: str):
-        option_elements = retry(
-            lambda: get_options(self.wd, xpath),
-            wait_time=0.1,
-            increase_wait_time=True,
-            fail_message="failed to get options",
-        )
-        for e in option_elements:
-            if e.text == option:
-                e.click()
-                break
-        else:
-            raise Exception(f"could not click {option=}")
-
     def _recurse_through_dropdown_tree(
         self,
         selections: List[DropDownSelection],
@@ -126,19 +122,23 @@ class NestedDropDowns:
         step_in_selection_wait = 0.1
         sleep(step_in_selection_wait)
 
-        option_elements = retry(
-            lambda: get_options(self.wd, sel.xpath),
+        options = retry(
+            lambda: [o.text for o in get_options(self.wd, sel.xpath)],
             wait_time=0.1,
             increase_wait_time=True,
             fail_message="failed to get options",
         )
-        options = [o.text for o in option_elements]
         start = self._calc_start(options, sel)
         stop = len(options) if sel.stop is None else sel.stop
         for k in range(start, stop):
             option = options[k]
             try:
-                self._click_option(sel.xpath, option)
+                retry(
+                    lambda: get_click_option(self.wd, sel.xpath, option),
+                    wait_time=0.1,
+                    increase_wait_time=True,
+                    fail_message="failed to get options",
+                )
                 if option in self.option_blacklist:
                     continue
                 self.selection_path.append(option)
