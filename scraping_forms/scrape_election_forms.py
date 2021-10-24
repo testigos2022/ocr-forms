@@ -27,22 +27,24 @@ def get_options(wd, xpath):
     return options
 
 
-def get_click_option(wd, xpath: str, option: str):
-    option_elements = get_options(wd, xpath)
-    for e in option_elements:
-        if e.text == option:
-            e.click()
-            break
-    else:
-        raise Exception(f"could not click {option=}")
-
-
 @dataclass
 class DropDownSelection:
     name: str
     xpath: str
     stop: Optional[int] = None
     start_option: Optional[str] = None
+
+
+def get_click_option(wd, sel: DropDownSelection, option: str):
+    option_elements = get_options(wd, sel.xpath)
+    options_texts = [e.text for e in option_elements]
+    print(f"{sel.name=} searching for {option} in {options_texts}")
+    for e, ot in zip(option_elements, options_texts):
+        if ot == option:
+            e.click()
+            break
+    else:
+        raise Exception(f"could not find {option=} in {options_texts} of {sel.name}")
 
 
 @dataclass
@@ -103,27 +105,30 @@ class NestedDropDowns:
                 sleep(3.0)
 
     def _run(self, wd):
-        self.selection_path = []
         self._set_start_state()
         self.to_be_moved = {}
         self.wd = wd
         self.wd.get(self.url)
-        self._recurse_through_dropdown_tree(self.selections)
+        self._recurse_through_dropdown_tree(self.selections, selection_path=[])
 
     @abstractmethod
     def get_pdf_urls(self) -> List[str]:
         raise NotImplemented
 
     def _recurse_through_dropdown_tree(
-        self,
-        selections: List[DropDownSelection],
+        self, selections: List[DropDownSelection], selection_path: List[str]
     ):
+        sys.stdout.write(f"\r{selection_path=}")
         sel = selections[0]
         step_in_selection_wait = 0.1
         sleep(step_in_selection_wait)
 
         options = retry(
-            lambda: [o.text for o in get_options(self.wd, sel.xpath)],
+            lambda: [
+                o.text
+                for o in get_options(self.wd, sel.xpath)
+                if o.text not in self.option_blacklist
+            ],
             wait_time=0.1,
             increase_wait_time=True,
             fail_message="failed to get options",
@@ -134,25 +139,27 @@ class NestedDropDowns:
             option = options[k]
             try:
                 retry(
-                    lambda: get_click_option(self.wd, sel.xpath, option),
-                    wait_time=0.1,
+                    lambda: get_click_option(self.wd, sel, option),
+                    wait_time=0.2,
+                    num_retries=3,
                     increase_wait_time=True,
-                    fail_message="failed to get options",
+                    fail_message="failed to get+click option",
                 )
-                if option in self.option_blacklist:
-                    continue
-                self.selection_path.append(option)
+
+                selection_path.append(option)
                 is_last = len(selections) == 1
                 if not is_last:
-                    self._recurse_through_dropdown_tree(selections[1:])
+                    self._recurse_through_dropdown_tree(selections[1:], selection_path)
                 else:
-                    self._process_selection_leaf()
+                    self._process_selection_leaf(selection_path)
+            except Exception as e:
+                print(f"FAILED to recurse at: {selection_path}")
+                raise e
             finally:
                 self._move_files()
-                if option in self.selection_path:
-                    sys.stdout.write(f"\r{self.selection_path=},{option=}")
-                    pop_index = self.selection_path.index(option)
-                    self.selection_path.pop(pop_index)
+                if option in selection_path:
+                    pop_index = selection_path.index(option)
+                    selection_path.pop(pop_index)
 
     def _calc_start(self, options: List[str], sel):
 
@@ -189,13 +196,13 @@ class NestedDropDowns:
         }
         # print(f"{len(self.to_be_moved)=} cleaned by already moved ones")
 
-    def _process_selection_leaf(self):
+    def _process_selection_leaf(self, selection_path):
         get_pdfs_wait = 0.1
         sleep(get_pdfs_wait)
         num_pdfs = 0
         num_pdfs_downloaded = 0
-        assert len(self.selection_path) > 0
-        selection_path_copy = [p for p in self.selection_path]
+        assert len(selection_path) > 0
+        selection_path_copy = [p for p in selection_path]
         self.state = {"selection_path": selection_path_copy}
         try:
             pdfs = self.get_pdf_urls()
@@ -218,7 +225,7 @@ class NestedDropDowns:
                         f"{self.download_path}/selection_states.jsonl",
                         [
                             {
-                                "selection_path": self.selection_path,
+                                "selection_path": selection_path,
                                 "pdf_file": pdf_file,
                                 "pdf_file_full": pdf_file_full,
                             }
@@ -234,7 +241,7 @@ class NestedDropDowns:
                 f"{self.download_path}/selection_states.jsonl",
                 [
                     {
-                        "selection_path": self.selection_path,
+                        "selection_path": selection_path,
                         "num_pdfs": num_pdfs,
                         "num_pdfs_downloaded": num_pdfs_downloaded,
                     }
