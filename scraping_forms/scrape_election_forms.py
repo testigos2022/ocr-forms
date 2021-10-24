@@ -6,7 +6,7 @@ import sys
 import traceback
 
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import sleep
 from typing import List, Tuple, Optional
@@ -23,8 +23,7 @@ from selenium_util import click_it, ChromeDriver, retry
 def get_options(wd, xpath):
     element: WebElement = wd.find_element_by_xpath(xpath)
     element.click()
-    options = [e.text for e in element.find_elements_by_tag_name("option")]
-
+    options = element.find_elements_by_tag_name("option")
     return options
 
 
@@ -36,13 +35,6 @@ class DropDownSelection:
     start_option: Optional[str] = None
 
 
-def click_option(wd, xpath):
-    element = wd.find_element_by_xpath(xpath)
-    element.click()
-    selected_option = element.text
-    return selected_option
-
-
 @dataclass
 class NestedDropDowns:
     base_url: str
@@ -50,6 +42,7 @@ class NestedDropDowns:
     download_path: str
     data_dir: str
     selections: List[DropDownSelection]
+    option_blacklist: List[str] = field(default_factory=lambda: ["SELECCIONE"])
     between_two_pdfs_wait_time: float = 1.0  # seconds
     headless: bool = True
     state: Optional = None
@@ -69,19 +62,21 @@ class NestedDropDowns:
         if self.state is not None:
             print(f"start-state:{self.state}")
             for option, selection in zip(self.state["selection_path"], self.selections):
-                selection.start_option = option
+                if option not in self.option_blacklist:
+                    selection.start_option = option
 
         return self
 
     def run(self):
         if os.path.isfile(self.state_json):
+
             def read_json(file: str, mode="b"):
                 with gzip.open(file, mode="r" + mode) if file.endswith("gz") else open(
-                        file, mode="r" + mode
+                    file, mode="r" + mode
                 ) as f:
                     s = f.read()
                     s = s.decode("utf-8") if mode == "b" else s
-                    s=s.replace("'","\"")
+                    s = s.replace("'", '"')
                     return json.loads(s)
 
             self.state = read_json(self.state_json)
@@ -94,7 +89,7 @@ class NestedDropDowns:
                 write_json(self.state_json, self.state)
                 print(f"run failed with: {e}")
                 print(f"wrote state: {self.state}")
-                # traceback.print_exc()
+                traceback.print_exc()
                 sleep(3.0)
 
     def _run(self, wd):
@@ -122,28 +117,18 @@ class NestedDropDowns:
             increase_wait_time=True,
         )
 
-        if sel.start_option is not None:
+        start = self._calc_start(sel)
 
-            def find_resume_start():
-                options = get_options(self.wd, sel.xpath)
-                assert (
-                    sel.start_option in options
-                ), f"{sel.start_option=} not in {options=}"
-                start = options.index(sel.start_option) + 1
-                return start
-
-            start = retry(find_resume_start,do_raise=False,default=1)
-            sel.start_option = None  # so that next time it starts at 1
-        else:
-            start = 1
-
-        num_options = len(options) + 1
+        num_options = len(options)
         stop = num_options if sel.stop is None else sel.stop
         for k in range(start, stop):
-            option_xpath = f"{sel.xpath}/option[{k}]"
+            option = options[k]
             selected_option = None
             try:
-                selected_option = retry(lambda: click_option(self.wd, option_xpath))
+                selected_option = option.text
+                if selected_option in self.option_blacklist:
+                    continue
+                retry(lambda: option.click())
                 self.selection_path.append(selected_option)
                 is_last = len(selections) == 1
                 if not is_last:
@@ -152,10 +137,30 @@ class NestedDropDowns:
                     self._process_selection_leaf()
             finally:
                 self._move_files()
-                if selected_option is not None:
+                if (
+                    selected_option is not None
+                    and selected_option in self.selection_path
+                ):
                     sys.stdout.write(f"\r{self.selection_path=},{selected_option=}")
                     pop_index = self.selection_path.index(selected_option)
                     self.selection_path.pop(pop_index)
+
+    def _calc_start(self, sel):
+        if sel.start_option is not None:
+
+            def find_resume_start():
+                options = get_options(self.wd, sel.xpath)
+                assert (
+                    sel.start_option in options
+                ), f"{sel.start_option=} not in {options=}"
+                start = options.index(sel.start_option)
+                return start
+
+            start = retry(find_resume_start, do_raise=False, default=1)
+            sel.start_option = None  # so that next time it starts at 1
+        else:
+            start = 0
+        return start
 
     def _move_files(self):
         for f in Path(self.download_path).glob("*.pdf"):
