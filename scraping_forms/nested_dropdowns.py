@@ -80,7 +80,7 @@ def get_options_and_start(
     options = [
         o.text for o in get_options(wd, sel.xpath) if o.text not in option_blacklist
     ]
-    assert len(options)>0
+    assert len(options) > 0
 
     if len(options) > 0:
         start = _calc_start(options, sel)
@@ -123,7 +123,7 @@ class NestedDropDowns:
         return self
 
     def run(self):
-        fail_count=0
+        fail_count = 0
         while True:
             if self.state is None and os.path.isfile(self.state_json):
                 self.state = read_json(self.state_json)
@@ -136,20 +136,20 @@ class NestedDropDowns:
                     opt.start_option = None
                     opt.stop = None
             except BaseException as e:
-                fail_count+=1
+                fail_count += 1
                 print(f"run failed with: {e}")
-                if fail_count<=1:
+                if fail_count <= 1:
                     write_json(self.state_json, self.state)
                     print(f"wrote state: {self.state}")
                     traceback.print_exc()
                 else:
                     print("wipe state")
-                    fail_count=0
+                    fail_count = 0
                     os.remove(self.state_json)
-                    self.state=None
+                    self.state = None
                     for opt in self.selections:
-                        opt.start_option=None
-                        opt.stop=None
+                        opt.start_option = None
+                        opt.stop = None
                 sleep(3.0)
 
     @beartype
@@ -179,7 +179,7 @@ class NestedDropDowns:
             num_retries=4,
             increase_wait_time=True,
             do_raise=False,
-            default=([],0),
+            default=([], 0),
             fail_message="failed to get options",
         )
         stop = len(options) if sel.stop is None else sel.stop
@@ -278,7 +278,7 @@ class NestedDropDowns:
                                 "selection_path": selection_path,
                                 "pdf_file": pdf_file,
                                 "pdf_file_full": pdf_file_full,
-                                "pdf_url":pdf_url
+                                "pdf_url": pdf_url,
                             }
                         ],
                         mode="ab",
