@@ -1,3 +1,4 @@
+misc_utils@git+https://github.com/dertilo/misc-utils@main#egg=misc_utils
 selenium
 beautifulsoup4
 tqdm

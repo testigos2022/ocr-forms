@@ -8,7 +8,7 @@ from scraping_forms.nested_dropdowns import DropDownSelection
 from scraping_forms.scrape_election_forms import ESCCong
 
 if __name__ == "__main__":
-    data_path=os.environ["DATA_PATH"]
+    data_path = os.environ["DATA_PATH"]
 
     scraper = ESCCong(
         data_dir=f"{data_path}/esc_cong_2018/data",

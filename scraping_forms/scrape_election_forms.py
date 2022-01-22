@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
+from selenium_scraping.selenium_util import click_it
 
 from scraping_forms.nested_dropdowns import NestedDropDowns
-from scraping_forms.selenium_util import click_it
 
 
 @dataclass

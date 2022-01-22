@@ -11,12 +11,11 @@ from time import sleep
 from typing import Optional, List
 
 from beartype import beartype
+from data_io.readwrite_files import read_json, write_json, write_jsonl
+from misc_utils.beartypes import NeList
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
-
-from scraping_forms.beartypes import NeList
-from scraping_forms.readwrite_files import read_json, write_json, write_jsonl
 from selenium_scraping.selenium_util import ChromeDriver, retry
 
 
@@ -185,6 +184,7 @@ class NestedDropDowns:
         stop = len(options) if sel.stop is None else sel.stop
         todo_options = [options[k] for k in range(start, stop)]
         done_options = []
+        err = None
         while len(todo_options) > 0:
             option = todo_options[0]
             try:
@@ -216,15 +216,17 @@ class NestedDropDowns:
                         )
                     else:
                         self._process_selection_leaf(selection_path)
-                        self._process_selection_leaf(selection_path)
+                        # self._process_selection_leaf(selection_path) # just to go over it twice
             except Exception as e:
+                err = e
                 print(f"FAILED to recurse at: {selection_path} with: {e}")
-                raise e
             finally:
                 self._move_files()
                 if option in selection_path:
                     pop_index = selection_path.index(option)
                     selection_path.pop(pop_index)
+                if err is not None:
+                    raise err
 
     def _move_files(self):
         for f in Path(self.download_path).glob("*.pdf"):
