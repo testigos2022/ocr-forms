@@ -15,6 +15,7 @@ from misc_utils.dataclass_utils import _UNDEFINED, UNDEFINED
 @dataclass
 class WgetPdfs(CachedData):
     url: Union[_UNDEFINED, str] = UNDEFINED
+    name: Union[_UNDEFINED, str] = UNDEFINED
 
     def _build_cache(self):
         page = requests.get(self.url)
@@ -24,8 +25,8 @@ class WgetPdfs(CachedData):
         def is_pdf(s: str):
             return any((s.endswith(suffix) for suffix in ["pdf", "PDF", "Pdf"]))
 
-        hrefs = list(set([x for x in all_hrefs if is_pdf(x.attrs["href"])]))
-        nonpdf_hrefs = list(set([x for x in all_hrefs if not is_pdf(x.attrs["href"])]))
+        hrefs = list(set([x for x in all_hrefs if is_pdf(x)]))
+        nonpdf_hrefs = list(set([x for x in all_hrefs if not is_pdf(x)]))
         print(f"{len(hrefs)} of {len(all_hrefs)} are pdfs")
         print(f"non-pdf hrefs: {nonpdf_hrefs}")
         write_lines(self.prefix_cache_dir(f"hrefs.txt"), hrefs)
@@ -38,4 +39,4 @@ class WgetPdfs(CachedData):
 
 if __name__ == "__main__":
     url = "https://elecciones1.registraduria.gov.co/esc_cong_2018/archivos/divulgacion/"
-    WgetPdfs(url=url, cache_base=os.environ["DATA_PATH"])
+    WgetPdfs(url=url, cache_base=os.environ["DATA_PATH"], name="esc_cong_2018").build()
