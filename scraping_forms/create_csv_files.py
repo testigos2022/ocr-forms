@@ -81,8 +81,8 @@ def write_e24_csv_file():
     ]
 
     def list_to_dict(s_path: list):
-        selections = ["corporacion", "departamento", "municipio", "zona"]
-        assert len(s_path) == 4, f"{s_path=}"
+        selections = ["original_filename","corporacion", "departamento", "municipio", "zona"]
+        assert len(s_path) == 5, f"{s_path=}"
 
         return {n: v for n, v in zip(selections, s_path)}
 
@@ -97,7 +97,7 @@ def write_e24_csv_file():
     # pprint(broken_selection_pathes)
     print(f"got {len(broken_selection_pathes)} broken ones")
     pdf2selection = {
-        d["pdf_file_full"]: list_to_dict(d["selection_path"])
+        d["pdf_file_full"]: list_to_dict([d["pdf_file"]]+d["selection_path"])
         for d in tqdm(
             read_jsonl(f"{folder}/downloads/selection_states.jsonl"),
             desc=f"pdf2selection",
@@ -119,11 +119,11 @@ def write_e24_csv_file():
 
 
 if __name__ == "__main__":
-    # write_e24_csv_file()
-    write_e14_csv_file()
+    write_e24_csv_file()
+    # write_e14_csv_file()
     # write_jsonl(f"content.jsonl", (d for d in json.loads(read_file("content.txt"))))
 """
-len(pdf2selection.keys())=10141
+len(pdf2selection.keys())=10153
 esc_cong_2018_archivos_divulgacion_E26_CAM_2_72_008_XXX_XX_XX_X_9521_F_49.pdf not in selection_path
 esc_cong_2018_archivos_divulgacion_AGE_XXX_2_72_008_XXX_XX_XX_X_9521_F_49.pdf not in selection_path
 

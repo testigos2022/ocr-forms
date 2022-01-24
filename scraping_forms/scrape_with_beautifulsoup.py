@@ -11,6 +11,7 @@ from data_io.download_extract_files import wget_file
 from data_io.readwrite_files import write_lines, read_lines
 from misc_utils.cached_data import CachedData, ContinuedCachedData
 from misc_utils.dataclass_utils import _UNDEFINED, UNDEFINED
+from misc_utils.utils import just_try
 
 
 @dataclass
@@ -29,7 +30,7 @@ class WgetPdfs(ContinuedCachedData):
         hrefs = [s for s in read_lines(self.hrefs_file) if s not in already_downloaded]
         print(f"already got: {len(already_downloaded)}, {len(hrefs)} still TODO")
         for pdf_file in tqdm(hrefs, desc="wgetting pdfs-files"):
-            wget_file(f"{url}/{pdf_file}", pdf_dir)
+            just_try(lambda :wget_file(f"{url}/{pdf_file}", pdf_dir),verbose=True)
 
     def _write_hrefs_file(self):
         page = requests.get(self.url)
