@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Union
 
 import requests
@@ -7,17 +8,30 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from data_io.download_extract_files import wget_file
-from data_io.readwrite_files import write_lines
-from misc_utils.cached_data import CachedData
+from data_io.readwrite_files import write_lines, read_lines
+from misc_utils.cached_data import CachedData, ContinuedCachedData
 from misc_utils.dataclass_utils import _UNDEFINED, UNDEFINED
 
 
 @dataclass
-class WgetPdfs(CachedData):
+class WgetPdfs(ContinuedCachedData):
     url: Union[_UNDEFINED, str] = UNDEFINED
     name: Union[_UNDEFINED, str] = UNDEFINED
 
-    def _build_cache(self):
+    def continued_build_cache(self) -> None:
+        pdf_dir = self.prefix_cache_dir("pdfs")
+
+        if not os.path.isfile(self.hrefs_file):
+            self._write_hrefs_file()
+            os.makedirs(pdf_dir)
+
+        already_downloaded = list(Path(pdf_dir).glob("*.*"))
+        hrefs = [s for s in read_lines(self.hrefs_file) if s not in already_downloaded]
+        print(f"already got: {len(already_downloaded)}, {len(hrefs)} still TODO")
+        for pdf_file in tqdm(hrefs, desc="wgetting pdfs-files"):
+            wget_file(f"{url}/{pdf_file}", pdf_dir)
+
+    def _write_hrefs_file(self):
         page = requests.get(self.url)
         soup = BeautifulSoup(page.text, features="html.parser")
         all_hrefs = list(set([x.attrs["href"] for x in soup.find_all("a")]))
@@ -29,12 +43,11 @@ class WgetPdfs(CachedData):
         nonpdf_hrefs = list(set([x for x in all_hrefs if not is_pdf(x)]))
         print(f"{len(hrefs)} of {len(all_hrefs)} are pdfs")
         print(f"non-pdf hrefs: {nonpdf_hrefs}")
-        write_lines(self.prefix_cache_dir(f"hrefs.txt"), hrefs)
+        write_lines(self.hrefs_file, hrefs)
 
-        pdf_dir = self.prefix_cache_dir("pdfs")
-        os.makedirs(pdf_dir)
-        for pdf_file in tqdm(hrefs, desc="wgetting pdfs-files"):
-            wget_file(f"{url}/{pdf_file}", pdf_dir)
+    @property
+    def hrefs_file(self):
+        return self.prefix_cache_dir(f"hrefs.txt")
 
 
 if __name__ == "__main__":
