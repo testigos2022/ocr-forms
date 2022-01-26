@@ -18,9 +18,9 @@ pip install -r scraping_forms/requirements.txt
 DATA_PATH=<some-where>/colombia_election_forms python scraping_forms/run_e14_scraper.py
 ```
 #### just one example
-![sample](scraping_forms/images/sample.png)
+![sample](images/sample.png)
 #### scraping does NOT work in headless mode!
-![image](scraping_forms/images/screenshot_headless_being_blocked.png)
+![image](images/screenshot_headless_being_blocked.png)
 * TODO: find out how to prevent being detected
 
 ### current status
