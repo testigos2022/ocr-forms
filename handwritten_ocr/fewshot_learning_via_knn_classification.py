@@ -1,19 +1,19 @@
 import itertools
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from sklearn import neighbors, preprocessing
-from sklearn.decomposition import TruncatedSVD, PCA
+from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 from data_io.readwrite_files import read_lines, write_file
-from handwritten_ocr.trocr_inference import OCRInferencer
-from misc_utils.cached_data import CachedData
+from handwritten_ocr.craft_text_detection import CraftCroppedImages
+from handwritten_ocr.pdf_to_images import ImagesFromPdf
+from handwritten_ocr.trocr_inference import OCRInferencer, EmbeddedData
+from misc_utils.prefix_suffix import PrefixSuffix
 from misc_utils.utils import build_markdown_table_from_dicts
 
 
@@ -41,20 +41,33 @@ if __name__ == "__main__":
 
     data_path = os.environ["DATA_PATH"]
 
-    # write_file("annotations.md",build_markdown_table_from_dicts(annotated_data))
-    embedder: OCRInferencer = OCRInferencer(
-        model_name="microsoft/trocr-base-printed"
+    embedded_data = EmbeddedData(
+        name="debug",
+        embeddings=TrOCREmbeddings(
+            inferencer=OCRInferencer(model_name="microsoft/trocr-base-handwritten"),
+            files=CraftCroppedImages(
+                name="debug",
+                image_files=ImagesFromPdf(
+                    pdf_file=PrefixSuffix(
+                        "data_path",
+                        "handwritten_ocr/data/e14_cong_2018__e14_divulgacion_01_001_001_CAM_E14_CAM_X_01_001_001_XX_01_005_X_XXX.pdf",
+                    )
+                ),
+            ),
+        ),
     ).build()
-    examples = [
+
+    # write_file("annotations.md",build_markdown_table_from_dicts(annotated_data))
+    train_data = [
         parse_table_row_line(l)
         for l in read_lines("annotations.md")
         if not any([l.startswith(s) for s in ["---", "idx"]])
     ]
-    print(examples)
+    print(train_data)
 
     file_embeddings = [
-        (f, embedder.embedd_file(f"{data_path}/{f}").detach().numpy())
-        for _, _, f in examples
+        (f, embedder.embedd_image(f"{data_path}/{f}").detach().numpy())
+        for _, _, f in train_data
     ]
     X = np.concatenate([[x] for _, x in file_embeddings])
     print(f"{X.shape=}")
@@ -68,7 +81,7 @@ if __name__ == "__main__":
     files = Path(path).rglob("crop_*.png")
 
     def get_predictions(p):
-        x = embedder.embedd_file(str(p))
+        x = embedder.embedd_image(str(p))
         x = x.detach().numpy()
         # x = np.expand_dims(x, 0)
         # o = clf.predict_proba(x).squeeze()

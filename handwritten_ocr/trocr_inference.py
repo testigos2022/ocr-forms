@@ -1,40 +1,45 @@
 # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/TrOCR/Evaluating_TrOCR_base_handwritten_on_the_IAM_test_set.ipynb
 import os
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Union
+from typing import Any, Iterable, Iterator, Union, Optional
 
 import numpy as np
-from misc_utils.prefix_suffix import BASE_PATHES, PrefixSuffix
+import torch
+from PIL import Image
+from beartype import beartype
 from numpy.typing import NDArray
-from tqdm import tqdm
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
-import requests
-
-from PIL import Image
-
-from data_io.readwrite_files import write_jsonl, read_jsonl
+from data_io.readwrite_files import read_jsonl
+from handwritten_ocr.craft_text_detection import CraftCroppedImages, CroppedImage
+from handwritten_ocr.pdf_to_images import ImagesFromPdf
 from misc_utils.buildable import Buildable
-from misc_utils.cached_data import CachedData
+from misc_utils.cached_data_specific import CachedDataclasses
 from misc_utils.dataclass_utils import (
     _UNDEFINED,
     UNDEFINED,
-    to_dict,
     decode_dataclass,
-    encode_dataclass,
 )
+from misc_utils.prefix_suffix import BASE_PATHES, PrefixSuffix
 from misc_utils.processing_utils import iterable_to_batches
-
-from handwritten_ocr.craft_text_detection import CraftCroppedImages
-from handwritten_ocr.pdf_to_images import CroppedImages, ImagesFromPdf
 
 
 @dataclass
-class EmbeddedFile:
-    file: PrefixSuffix
-    array: NDArray
+class EmbeddedImage(CroppedImage):
+    bucket_file: PrefixSuffix
+    bucket_index: int
+    _array: Optional[NDArray] = field(init=True, default=None, repr=False)
+
+    @property
+    def array(self) -> NDArray:
+        if self._array is None:
+            self._array = np.load(f"{self.bucket_file}")[self.bucket_index]
+        return self._array
+
+    @beartype
+    def set_array(self, array: NDArray):
+        self._array = array
 
 
 @dataclass
@@ -57,44 +62,21 @@ class OCRInferencer(Buildable):
     def _pixel_values_from_file(self, file):
         image = Image.open(file).convert("RGB")
         pixel_values = self.processor(image, return_tensors="pt").pixel_values
-        # print(f"{pixel_values.shape=}")
         return pixel_values
 
-    def embedd_file(self, file: PrefixSuffix):
-        pixel_values = self._pixel_values_from_file(str(file))
+    @beartype
+    def embedd_image(self, image_file: str) -> torch.Tensor:
+        pixel_values = self._pixel_values_from_file(image_file)
         encoder_output = self.model.encoder(pixel_values)
         embedding = encoder_output.pooler_output.squeeze()
-        return EmbeddedFile(file=file, array=embedding.detach().numpy())
+        return embedding
 
 
 @dataclass
-class EmbeddingsIter(Buildable, Iterable[EmbeddedFile]):
-    @abstractmethod
-    def __iter__(self) -> Iterator[EmbeddedFile]:
-        raise NotImplementedError
-
-
-@dataclass
-class TrOCREmbeddings(EmbeddingsIter):
-    inferencer: OCRInferencer
-    files: Iterable[PrefixSuffix]
-
-    def __iter__(self) -> Iterator[EmbeddedFile]:
-        for f in self.files:
-            yield self.inferencer.embedd_file(f)
-
-
-@dataclass
-class ManifestDatum:
-    file: PrefixSuffix
-    bucket_file_name: str
-    bucket_index: int
-
-
-@dataclass
-class EmbeddedData(CachedData):
+class EmbeddedData(CachedDataclasses[EmbeddedImage]):
     name: Union[_UNDEFINED, str] = UNDEFINED
-    embeddings: Union[_UNDEFINED, EmbeddingsIter] = UNDEFINED
+    images: Union[_UNDEFINED, CraftCroppedImages] = UNDEFINED
+    inferencer: Union[_UNDEFINED, OCRInferencer] = UNDEFINED
     bucket_size: int = 100
 
     cache_base: PrefixSuffix = field(
@@ -105,46 +87,42 @@ class EmbeddedData(CachedData):
     def data_folder(self):
         return self.prefix_cache_dir("data")
 
-    def _build_cache(self):
+    def generate_dataclasses_to_cache(self) -> Iterator[EmbeddedImage]:
         os.makedirs(self.data_folder, exist_ok=True)
-        write_jsonl(
-            self.manifest_file,
-            (
-                encode_dataclass(o)
-                for o in tqdm(
-                    self._dump_batches(), desc=f"writing manifest, dumping embeddings"
-                )
-            ),
-        )
-
-    @property
-    def manifest_file(self):
-        return self.prefix_cache_dir("manifest.jsonl.gz")
+        yield from self._dump_batches()
 
     def _dump_batches(self):
-        for k, bucket in enumerate(
-            iterable_to_batches(self.embeddings, batch_size=self.bucket_size)
-        ):
-            bucket: list[EmbeddedFile]
-            concat_array = np.concatenate([b.array for b in bucket])
+        g = ((im, self.inferencer.embedd_image(str(im))) for im in self.images)
+
+        for k, bucket in enumerate(iterable_to_batches(g, batch_size=self.bucket_size)):
+            bucket: list[tuple[CroppedImage, NDArray]]
+            concat_array = np.concatenate([a for i, a in bucket])
             bucket_file_name = f"bucket-{k}.npy"
             bucket_file = f"{self.data_folder}/{bucket_file_name}"
             np.save(bucket_file, concat_array)
             yield from [
-                ManifestDatum(
-                    file=b.file, bucket_file_name=bucket_file_name, bucket_index=bidx
+                EmbeddedImage(
+                    image_file=i.image_file,
+                    cropped_image_file=i.cropped_image_file,
+                    box=i.box,
+                    bucket_file=self.cache_dir.from_str_same_prefix(bucket_file),
+                    bucket_index=bidx,
                 )
-                for bidx, b in enumerate(bucket)
+                for bidx, (i, a) in enumerate(bucket)
             ]
 
-    def __iter__(self) -> Iterator[EmbeddedFile]:
-        g = (decode_dataclass(d) for d in read_jsonl(self.manifest_file))
-        bucketfile2datum = {d.bucket_file_name: d for d in g}
+    def __iter__(self) -> Iterator[EmbeddedImage]:
+        g: Iterable[EmbeddedImage] = (
+            decode_dataclass(d) for d in read_jsonl(self.jsonl_file)
+        )
+        bucketfile2datum = {d.bucket_file: d for d in g}
         for p in Path(self.data_folder).glob("*.npy"):
             batch_array = np.load(str(p))
             for k, a in enumerate(batch_array):
-                datum: ManifestDatum = bucketfile2datum[p.name]
-                yield EmbeddedFile(file=datum.file, array=a)
+                datum: EmbeddedImage = bucketfile2datum[p.name]
+                assert k == datum.bucket_index
+                datum.set_array(a)
+                yield datum
 
 
 if __name__ == "__main__":
@@ -160,16 +138,14 @@ if __name__ == "__main__":
 
     EmbeddedData(
         name="debug",
-        embeddings=TrOCREmbeddings(
-            inferencer=OCRInferencer(model_name="microsoft/trocr-base-handwritten"),
-            files=CraftCroppedImages(
-                name="debug",
-                image_files=ImagesFromPdf(
-                    pdf_file=PrefixSuffix(
-                        "data_path",
-                        "handwritten_ocr/data/e14_cong_2018__e14_divulgacion_01_001_001_CAM_E14_CAM_X_01_001_001_XX_01_005_X_XXX.pdf",
-                    )
-                ),
+        inferencer=OCRInferencer(model_name="microsoft/trocr-base-handwritten"),
+        images=CraftCroppedImages(
+            name="debug",
+            image_files=ImagesFromPdf(
+                pdf_file=PrefixSuffix(
+                    "data_path",
+                    "handwritten_ocr/data/e14_cong_2018__e14_divulgacion_01_001_001_CAM_E14_CAM_X_01_001_001_XX_01_005_X_XXX.pdf",
+                )
             ),
         ),
     ).build()
