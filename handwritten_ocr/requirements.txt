@@ -1,5 +1,6 @@
 beartype
 misc_utils@git+https://github.com/dertilo/misc-utils@main#egg=misc_utils
+pdf2image
 craft-text-detector
 transformers==4.16.2
 sentencepiece==0.1.96

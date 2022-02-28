@@ -6,5 +6,6 @@
 * 
 ### setup
 ```shell
+source $BASE_PATH/envs/ocr/bin/activate
 pip install -r handwritten_ocr/requirements.txt
 ```

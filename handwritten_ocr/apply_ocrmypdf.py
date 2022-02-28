@@ -34,10 +34,18 @@ class OCRMyPDFsFolder(CachedData):
 
 if __name__ == "__main__":
     # https://ocrmypdf.readthedocs.io/en/latest/batch.html -> TODO!
-    cache_base = os.environ['DATA_PATH']
-    OCRMyPDFsFolder(
-        name="esc_cong_2018",
-        lang="spa",
-        folder=f"{cache_base}/WgetPdfs-esc_cong_2018-64ef3d6edcc9a7961dab1c80f2d9e07569e82362/pdfs",
-        cache_base=cache_base,
-    ).build()
+    # cache_base = os.environ['DATA_PATH']
+    # OCRMyPDFsFolder(
+    #     name="esc_cong_2018",
+    #     lang="spa",
+    #     folder=f"{cache_base}/WgetPdfs-esc_cong_2018-64ef3d6edcc9a7961dab1c80f2d9e07569e82362/pdfs",
+    #     cache_base=cache_base,
+    # ).build()
+    base_path = "handwritten_ocr"
+
+    pdf_file = f"handwritten_ocr/data/e14_cong_2018__e14_divulgacion_01_001_001_CAM_E14_CAM_X_01_001_001_XX_01_005_X_XXX.pdf"
+    ocrmypdf.ocr(
+        input_file=pdf_file,
+        output_file=f"handwritten_ocr/{Path(pdf_file).stem}_ocr.pdf",
+        language="spa",
+    )
