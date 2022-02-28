@@ -9,6 +9,7 @@ import torch
 from PIL import Image
 from beartype import beartype
 from numpy.typing import NDArray
+from tqdm import tqdm
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 from data_io.readwrite_files import read_jsonl
@@ -49,6 +50,7 @@ class OCRInferencer(Buildable):
     def _build_self(self) -> Any:
         self.processor = TrOCRProcessor.from_pretrained(self.model_name)
         self.model = VisionEncoderDecoderModel.from_pretrained(self.model_name)
+        self.model.eval()
 
     def ocr_file(self, file: str) -> str:
         # https://huggingface.co/docs/transformers/v4.15.0/en/model_doc/trocr
@@ -66,9 +68,10 @@ class OCRInferencer(Buildable):
 
     @beartype
     def embedd_image(self, image_file: str) -> torch.Tensor:
-        pixel_values = self._pixel_values_from_file(image_file)
-        encoder_output = self.model.encoder(pixel_values)
-        embedding = encoder_output.pooler_output.squeeze()
+        with torch.no_grad():
+            pixel_values = self._pixel_values_from_file(image_file)
+            encoder_output = self.model.encoder(pixel_values)
+            embedding = encoder_output.pooler_output.squeeze()
         return embedding
 
 
@@ -92,7 +95,15 @@ class EmbeddedData(CachedDataclasses[EmbeddedImage]):
         yield from self._dump_batches()
 
     def _dump_batches(self):
-        g = ((im, self.inferencer.embedd_image(str(im))) for im in self.images)
+        g = (
+            (
+                im,
+                self.inferencer.embedd_image(str(im.cropped_image_file))
+                .detach()
+                .numpy(),
+            )
+            for im in tqdm(self.images, desc="embedding images")
+        )
 
         for k, bucket in enumerate(iterable_to_batches(g, batch_size=self.bucket_size)):
             bucket: list[tuple[CroppedImage, NDArray]]
