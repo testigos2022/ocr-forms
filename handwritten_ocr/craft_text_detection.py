@@ -15,9 +15,9 @@ from tqdm import tqdm
 
 
 @dataclass
-class CraftCroppedImages(CachedData, Iterable[str]):
+class CraftCroppedImages(CachedData, Iterable[PrefixSuffix]):
     name: Union[_UNDEFINED, str] = UNDEFINED
-    image_files: Union[_UNDEFINED, Iterable[str]] = UNDEFINED
+    image_files: Union[_UNDEFINED, Iterable[PrefixSuffix]] = UNDEFINED
     cache_base: PrefixSuffix = field(
         default_factory=lambda: PrefixSuffix("cache_root", "cropped_images")
     )
@@ -38,11 +38,11 @@ class CraftCroppedImages(CachedData, Iterable[str]):
             cuda=False,
         )
         for f in tqdm(self.image_files, desc="craft-detecting"):
-            prediction_result = craft.detect_text(f)
+            prediction_result = craft.detect_text(str(f))
 
         craft.unload_craftnet_model()
         craft.unload_refinenet_model()
 
-    def __iter__(self) -> Iterator[str]:
+    def __iter__(self) -> Iterator[PrefixSuffix]:
         for p in Path(self.output_dir).rglob("crop*.png"):
-            yield str(p)
+            yield self.cache_dir.from_str_same_prefix(str(p))

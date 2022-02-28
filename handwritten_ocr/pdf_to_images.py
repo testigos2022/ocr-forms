@@ -64,12 +64,16 @@ class CroppedImages(CachedData, Iterable[str]):
 
 
 @dataclass
-class ImagesFromPdf(CachedData, Iterable[str]):
-    pdf_file: Union[_UNDEFINED, str] = UNDEFINED
+class ImagesFromPdf(CachedData, Iterable[PrefixSuffix]):
+    pdf_file: Union[_UNDEFINED, PrefixSuffix] = UNDEFINED
+
+    cache_base: PrefixSuffix = field(
+        default_factory=lambda: PrefixSuffix("cache_root", "pdf_page_images")
+    )
 
     @property
     def name(self):
-        return Path(self.pdf_file).name
+        return Path(str(self.pdf_file)).name
 
     @property
     def output_dir(self):
@@ -78,13 +82,15 @@ class ImagesFromPdf(CachedData, Iterable[str]):
     def _build_cache(self):
         os.makedirs(self.output_dir, exist_ok=True)
 
-        pages = convert_from_path(pdf_file, 200)
+        pages = convert_from_path(str(self.pdf_file), 200)
         for k, page in tqdm(enumerate(pages)):
-            page.save(f"{self.output_dir}/{Path(pdf_file).name}-{k}.jpg", "JPEG")
+            page.save(
+                f"{self.output_dir}/{Path(str(self.pdf_file)).name}-{k}.jpg", "JPEG"
+            )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[PrefixSuffix]:
         for p in Path(self.output_dir).rglob(f"*.jpg"):
-            yield str(p)
+            yield self.cache_dir.from_str_same_prefix(str(p))
 
 
 if __name__ == "__main__":
